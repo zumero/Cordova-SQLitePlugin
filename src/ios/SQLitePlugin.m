@@ -168,13 +168,15 @@ static int base64_encode_blockend(char* code_out,
     NSValue *dbPointer;
 
     if (dbname == NULL) {
-        pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:@"You must specify database name"];
+        NSDictionary *result = @{ @"msg": @"You must specify database name" };
+        pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsDictionary:result];
     }
     else {
         dbPointer = [openDBs objectForKey:dbname];
         if (dbPointer != NULL) {
             // NSLog(@"Reusing existing database connection");
-            pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:@"Database opened"];
+            NSDictionary *result = @{ @"msg": @"Database opened", @"path": dbname };
+            pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsDictionary:result];
         }
         else {
             const char *name = [dbname UTF8String];
@@ -194,7 +196,9 @@ static int base64_encode_blockend(char* code_out,
                 if(sqlite3_exec(db, (const char*)"SELECT count(*) FROM sqlite_master;", NULL, NULL, NULL) == SQLITE_OK) {
                     dbPointer = [NSValue valueWithPointer:db];
                     [openDBs setObject: dbPointer forKey: dbname];
-                    pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:@"Database opened"];
+
+                    NSDictionary *result = @{ @"msg": @"Database opened", @"path": dbname };
+                    pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsDictionary:result];
                 } else {
                     pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:@"Unable to encrypt DB"];
                 }

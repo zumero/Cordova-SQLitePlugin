@@ -71,6 +71,15 @@ License for common Javascript: MIT or Apache
     SQLitePlugin::open = (success, error) ->
       unless @dbname of @openDBs
         @openDBs[@dbname] = true
+
+        if success
+          innerSuccess = success
+          success = (result) ->
+            msg = if (result and result.msg) then result.msg else ""
+            fn = if (result and result.path) then result.path else ""
+
+            innerSuccess(msg, fn)
+
         cordova.exec success, error, "SQLitePlugin", "open", [ @openargs ]
 
       return
