@@ -10,12 +10,12 @@ License for iOS version: MIT only
 
 This is a fork of the [lite4cordova SQLite plugin](https://github.com/lite4cordova/Cordova-SQLitePlugin).
 
-No changes in function have been made; we've just extended the `success` handler of the `openDatabase()` method. It now takes both a `message` parameter (as before) and a `fullpath` parameter, which receives the full path/filename of the opened database. This path is required for [Zumero](http://zumero.com/) sync calls, and is not otherwise available to users of this plugin.
+No changes in function have been made; we've just extended the `success` handler of the `openDatabase()` method. It now takes both a `message` parameter (as before) and a `fullname` parameter, which receives the full path/filename of the opened database. This path is required for [Zumero](http://zumero.com/) sync calls, and is not otherwise available to users of this plugin.
 
 **Example:**
 
     var db = window.sqlitePlugin.openDatabase( {name: dbName},
-        function(msg, fullname) {
+        function(message, fullname) {
             // save for later
             myDbFilename = fullname;
 
