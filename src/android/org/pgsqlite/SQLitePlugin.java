@@ -16,8 +16,8 @@ import java.lang.Number;
 
 import java.util.HashMap;
 
-import org.apache.cordova.api.CordovaPlugin;
-import org.apache.cordova.api.CallbackContext;
+import org.apache.cordova.CordovaPlugin;
+import org.apache.cordova.CallbackContext;
 
 import android.database.Cursor;
 
@@ -261,7 +261,7 @@ public class SQLitePlugin extends CordovaPlugin
 
 		// Use try & catch just in case android.os.Build.VERSION.SDK_INT >= 16 was lying:
 		try {
-// TODO			status = SQLiteDatabase.deleteDatabase(dbfile);
+			status = SQLiteDatabase.deleteDatabase(dbfile);
 		} catch (Exception ex) {
 			// log & give up:
 			Log.v("executeSqlBatch", "deleteDatabase(): Error=" +  ex.getMessage());
