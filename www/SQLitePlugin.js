@@ -60,7 +60,7 @@
           var fn, msg;
           msg = result && result.msg ? result.msg : "";
           fn = result && result.path ? result.path : "";
-          return innerSuccess(msg, fn);
+          return innerSuccess(msg, fn, this);
         };
       }
       cordova.exec(success, error, "SQLitePlugin", "open", [this.openargs]);

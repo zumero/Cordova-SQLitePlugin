@@ -78,7 +78,7 @@ License for common Javascript: MIT or Apache
             msg = if (result and result.msg) then result.msg else ""
             fn = if (result and result.path) then result.path else ""
 
-            innerSuccess(msg, fn)
+            innerSuccess(msg, fn, this)
 
         cordova.exec success, error, "SQLitePlugin", "open", [ @openargs ]
 
