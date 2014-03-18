@@ -8,7 +8,7 @@ License for iOS version: MIT only
 
 ## Zumero Fork
 
-This is a fork of the [lite4cordova SQLite plugin](https://github.com/lite4cordova/Cordova-SQLitePlugin).
+This is a fork of the [lite4cordova SQLite plugin](https://github.com/brodysoft/Cordova-SQLitePlugin).
 
 No changes in function have been made; we've just extended the `success` handler of the `openDatabase()` method. It now takes:
 
