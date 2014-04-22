@@ -71,6 +71,7 @@ License for common Javascript: MIT or Apache
     SQLitePlugin::open = (success, error) ->
       unless @dbname of @openDBs
         @openDBs[@dbname] = true
+        dbobject = this
 
         if success
           innerSuccess = success
@@ -78,7 +79,7 @@ License for common Javascript: MIT or Apache
             msg = if (result and result.msg) then result.msg else ""
             fn = if (result and result.path) then result.path else ""
 
-            innerSuccess(msg, fn, this)
+            innerSuccess(msg, fn, dbobject)
 
         cordova.exec success, error, "SQLitePlugin", "open", [ @openargs ]
 
