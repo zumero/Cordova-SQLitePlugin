@@ -8,11 +8,17 @@ MIT or Apache 2.0
 
 MIT or Apache 2.0
 
-- Extracted from DroidGap by @brodybits (Chris Brody)
-- Transaction batch processing of Android version by @marcucio
-- Maintained by @brodybits (Chris Brody)
-
 ## iOS version
 
 MIT only
+
+## Windows (8.1) version
+
+MIT or Apache 2.0
+
+### SQLite3-WinRT
+
+by @doo (doo GmbH)
+
+MIT License
 
