@@ -20,7 +20,7 @@ No changes in function have been made; we've just extended the `success` handler
 
 ### TODO: update example call with location
 
-    var db = window.sqlitePlugin.openDatabase( {name: dbName},
+    var db = window.sqlitePlugin.openDatabase( {name: dbName, location: 'default'},
         function(message, fullname, db) {
             // save for later
             myDbFilename = fullname;
