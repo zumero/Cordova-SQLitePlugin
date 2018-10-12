@@ -217,8 +217,8 @@
 
       else
         console.log 'OPEN database: ' + @dbname
-
-        opensuccesscb = =>
+		
+        opensuccesscb = (resultObj) =>
           # NOTE: the db state is NOT stored (in @openDBs) if the db was closed or deleted.
           console.log 'OPEN database: ' + @dbname + ' - OK'
 
@@ -232,6 +232,7 @@
           if @dbname of @openDBs
             @openDBs[@dbname] = DB_STATE_OPEN
 
+          @.fullpath = resultObj.fullpath
           if !!success then success @
 
           txLock = txLocks[@dbname]

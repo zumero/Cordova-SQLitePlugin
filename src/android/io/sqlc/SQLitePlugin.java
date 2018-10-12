@@ -89,7 +89,7 @@ public class SQLitePlugin extends CordovaPlugin {
 
         switch (action) {
             case echoStringValue:
-                o = args.getJSONObject(0);
+				o = args.getJSONObject(0);
                 echo_value = o.getString("value");
                 cbc.success(echo_value);
                 break;
@@ -214,8 +214,10 @@ public class SQLitePlugin extends CordovaPlugin {
             SQLiteAndroidDatabase mydb = old_impl ? new SQLiteAndroidDatabase() : new SQLiteConnectorDatabase();
             mydb.open(dbfile);
 
+			JSONObject resultObj = new JSONObject();
+			resultObj.put("fullpath",dbfile.getAbsolutePath());
             if (cbc != null) // XXX Android locking/closing BUG workaround
-                cbc.success();
+                cbc.success(resultObj);
 
             return mydb;
         } catch (Exception e) {

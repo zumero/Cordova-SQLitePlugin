@@ -94,6 +94,31 @@ var mytests = function() {
 
           return window.sqlitePlugin.openDatabase(dbopts, okcb, errorcb);
         }
+		
+		it(suiteName + 'Verify that fullpath is set after openDatabase', function(done) {
+          var dbName = "Test-verify-fullpath.db";
+
+          try {
+            openDatabase({name: dbName, location: 'default'}, function(db) {
+              // EXPECTED RESULT:
+              expect(db).toBeDefined();
+              expect(db.fullpath).toBeDefined();
+			  expect(db.fullpath).toContain(dbName);
+			  db.close(done, done);
+            }, function(error) {
+              // NOT EXPECTED:
+              expect(false).toBe(true);
+              expect(error.message).toBe('--');
+              done();
+            });
+          } catch (e) {
+            // NOT EXPECTED:
+            expect(false).toBe(true);
+            expect(e.message).toBe('--');
+            done();
+          }
+        }, MYTIMEOUT);
+
 
         it(suiteName + 'Open database with normal US-ASCII characters (no slash) & check internal database file name', function(done) {
           var dbName = "Test!123-456$789.db";
