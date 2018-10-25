@@ -103,8 +103,16 @@ var mytests = function() {
               // EXPECTED RESULT:
               expect(db).toBeDefined();
               expect(db.fullpath).toBeDefined();
-			  expect(db.fullpath).toContain(dbName);
-			  db.close(done, done);
+              expect(db.fullpath).toContain(dbName);
+              openDatabase({name: dbName, location: 'default'}, function(db2) {
+                expect(db2.fullpath).toBe(db.fullpath);
+                db2.close(done, done);
+              },
+              function(error) {
+                expect(false).toBe(true);
+                expect(error.message).toBe('--');
+                done();
+              });
             }, function(error) {
               // NOT EXPECTED:
               expect(false).toBe(true);

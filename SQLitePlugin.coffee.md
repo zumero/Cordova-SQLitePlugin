@@ -119,6 +119,7 @@
     # or even combined with txLocks if possible.
     # NOTE: In case txLocks is renamed or replaced the selfTest has to be adapted as well.
     SQLitePlugin::openDBs = {}
+    SQLitePlugin::DBfullpaths = {}
 
     SQLitePlugin::addTransaction = (t) ->
       if !txLocks[@dbname]
@@ -209,6 +210,8 @@
         # for a re-open run the success cb async so that the openDatabase return value
         # can be used in the success handler as an alternative to the handler's
         # db argument
+		
+        @.fullpath = @DBfullpaths[@dbname]
         nextTick =>
           success @
           return
@@ -231,6 +234,7 @@
 
           if @dbname of @openDBs
             @openDBs[@dbname] = DB_STATE_OPEN
+            @DBfullpaths[@dbname] = resultObj.fullpath
 
           @.fullpath = resultObj.fullpath
           if !!success then success @
