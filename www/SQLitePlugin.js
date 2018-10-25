@@ -1,20 +1,49 @@
 (function() {
+  // # SQLite plugin in Markdown (litcoffee)
+
+  // #### Use coffee compiler to compile this directly into Javascript
+
+  // #### License for common script: MIT or Apache
+
+  // # Top-level SQLite plugin objects
+
+  // ## root window object:
+  /*
+  Utility that avoids leaking the arguments object. See
+  https://www.npmjs.org/package/argsarray
+  */
   var DB_STATE_INIT, DB_STATE_OPEN, READ_ONLY_REGEX, SQLiteFactory, SQLitePlugin, SQLitePluginTransaction, SelfTest, argsArray, dblocations, iosLocationMap, newSQLError, nextTick, root, txLocks;
 
   root = this;
 
+  // ## constant(s):
   READ_ONLY_REGEX = /^(\s|;)*(?:alter|create|delete|drop|insert|reindex|replace|update)/i;
 
+  // per-db state
   DB_STATE_INIT = "INIT";
 
   DB_STATE_OPEN = "OPEN";
 
+  // ## global(s):
+
+  // per-db map of locking and queueing
+  // XXX NOTE: This is NOT cleaned up when a db is closed and/or deleted.
+  // If the record is simply removed when a db is closed or deleted,
+  // it will cause some test failures and may break large-scale
+  // applications that repeatedly open and close the database.
+  // [BUG #210] TODO: better to abort and clean up the pending transaction state.
+  // XXX TBD this will be renamed and include some more per-db state.
+  // NOTE: In case txLocks is renamed or replaced the selfTest has to be adapted as well.
   txLocks = {};
 
+  // ## utility functions:
+
+  // Errors returned to callbacks must conform to `SqlError` with a code and message.
+  // Some errors are of type `Error` or `string` and must be converted.
   newSQLError = function(error, code) {
     var sqlError;
     sqlError = error;
-    if (!code) {
+    if (!code) { // unknown by default
       code = 0;
     }
     if (!sqlError) {
@@ -39,12 +68,6 @@
     window.setTimeout(fun, 0);
   };
 
-
-  /*
-    Utility that avoids leaking the arguments object. See
-    https://www.npmjs.org/package/argsarray
-   */
-
   argsArray = function(fun) {
     return function() {
       var args, i, len;
@@ -62,6 +85,11 @@
     };
   };
 
+  // ## SQLite plugin db-connection handle
+
+  // #### NOTE: there can be multipe SQLitePlugin db-connection handles per open db.
+
+  // #### SQLite plugin db connection handle object is defined by a constructor function and prototype member functions:
   SQLitePlugin = function(openargs, openSuccess, openError) {
     var dbname;
     if (!(openargs && openargs['name'])) {
@@ -88,7 +116,13 @@
     isSQLitePluginDatabase: true
   };
 
+  // Keep track of state of open db connections
+  // XXX FUTURE TBD this *may* be moved and renamed,
+  // or even combined with txLocks if possible.
+  // NOTE: In case txLocks is renamed or replaced the selfTest has to be adapted as well.
   SQLitePlugin.prototype.openDBs = {};
+
+  SQLitePlugin.prototype.DBfullpaths = {};
 
   SQLitePlugin.prototype.addTransaction = function(t) {
     if (!txLocks[this.dbname]) {
@@ -99,11 +133,16 @@
     }
     txLocks[this.dbname].queue.push(t);
     if (this.dbname in this.openDBs && this.openDBs[this.dbname] !== DB_STATE_INIT) {
+      // FUTURE TBD: rename startNextTransaction to something like
+      // triggerTransactionQueue
+      // ALT TBD: only when queue has length of 1 (and test)??
       this.startNextTransaction();
     } else {
       if (this.dbname in this.openDBs) {
         console.log('new transaction is queued, waiting for open operation to finish');
       } else {
+        // XXX SHOULD NOT GET HERE.
+        // FUTURE TBD TODO: in this exceptional case abort and discard the transaction.
         console.log('database is closed, new transaction is [stuck] waiting until db is opened again!');
       }
     }
@@ -128,34 +167,42 @@
   SQLitePlugin.prototype.startNextTransaction = function() {
     var self;
     self = this;
-    nextTick((function(_this) {
-      return function() {
-        var txLock;
-        if (!(_this.dbname in _this.openDBs) || _this.openDBs[_this.dbname] !== DB_STATE_OPEN) {
-          console.log('cannot start next transaction: database not open');
-          return;
-        }
-        txLock = txLocks[self.dbname];
-        if (!txLock) {
-          console.log('cannot start next transaction: database connection is lost');
-          return;
-        } else if (txLock.queue.length > 0 && !txLock.inProgress) {
-          txLock.inProgress = true;
-          txLock.queue.shift().start();
-        }
-      };
-    })(this));
+    nextTick(() => {
+      var txLock;
+      if (!(this.dbname in this.openDBs) || this.openDBs[this.dbname] !== DB_STATE_OPEN) {
+        console.log('cannot start next transaction: database not open');
+        return;
+      }
+      txLock = txLocks[self.dbname];
+      if (!txLock) {
+        console.log('cannot start next transaction: database connection is lost');
+        return;
+      // XXX TBD TODO (BUG #210/??): abort all pending transactions with error cb [and test!!]
+      // @abortAllPendingTransactions()
+      } else if (txLock.queue.length > 0 && !txLock.inProgress) {
+        // start next transaction in q
+        txLock.inProgress = true;
+        txLock.queue.shift().start();
+      }
+    });
   };
 
   SQLitePlugin.prototype.abortAllPendingTransactions = function() {
     var j, len1, ref, tx, txLock;
+    // extra debug info:
+    // if txLocks[@dbname] then console.log 'abortAllPendingTransactions with transaction queue length: ' + txLocks[@dbname].queue.length
+    // else console.log 'abortAllPendingTransactions with no transaction lock state'
     txLock = txLocks[this.dbname];
     if (!!txLock && txLock.queue.length > 0) {
       ref = txLock.queue;
+      // XXX TODO: what to do in case there is a (stray) transaction in progress?
+      //console.log 'abortAllPendingTransactions - cleanup old transaction(s)'
       for (j = 0, len1 = ref.length; j < len1; j++) {
         tx = ref[j];
         tx.abortFromQ(newSQLError('Invalid database handle'));
       }
+      // XXX TODO: consider cleaning up (delete) txLocks[@dbname] resource,
+      // in case it is known there are no more pending transactions
       txLock.queue = [];
       txLock.inProgress = false;
     }
@@ -165,49 +212,57 @@
     var openerrorcb, opensuccesscb, step2;
     if (this.dbname in this.openDBs) {
       console.log('database already open: ' + this.dbname);
-      nextTick((function(_this) {
-        return function() {
-          success(_this);
-        };
-      })(this));
+      // for a re-open run the success cb async so that the openDatabase return value
+      // can be used in the success handler as an alternative to the handler's
+      // db argument
+      this.fullpath = this.DBfullpaths[this.dbname];
+      nextTick(() => {
+        success(this);
+      });
     } else {
+      // (done)
       console.log('OPEN database: ' + this.dbname);
-      opensuccesscb = (function(_this) {
-        return function(resultObj) {
-          var txLock;
-          console.log('OPEN database: ' + _this.dbname + ' - OK');
-          if (!_this.openDBs[_this.dbname]) {
-            console.log('database was closed during open operation');
-          }
-          if (_this.dbname in _this.openDBs) {
-            _this.openDBs[_this.dbname] = DB_STATE_OPEN;
-          }
-          _this.fullpath = resultObj.fullpath;
-          if (!!success) {
-            success(_this);
-          }
-          txLock = txLocks[_this.dbname];
-          if (!!txLock && txLock.queue.length > 0 && !txLock.inProgress) {
-            _this.startNextTransaction();
-          }
-        };
-      })(this);
-      openerrorcb = (function(_this) {
-        return function() {
-          console.log('OPEN database: ' + _this.dbname + ' FAILED, aborting any pending transactions');
-          if (!!error) {
-            error(newSQLError('Could not open database'));
-          }
-          delete _this.openDBs[_this.dbname];
-          _this.abortAllPendingTransactions();
-        };
-      })(this);
+      opensuccesscb = (resultObj) => {
+        var txLock;
+        // NOTE: the db state is NOT stored (in @openDBs) if the db was closed or deleted.
+        console.log('OPEN database: ' + this.dbname + ' - OK');
+        if (!this.openDBs[this.dbname]) {
+          console.log('database was closed during open operation');
+        }
+        // XXX TODO (WITH TEST) ref BUG litehelpers/Cordova-sqlite-storage#210:
+        // if !!error then error newSQLError 'database closed during open operation'
+        // @abortAllPendingTransactions()
+        if (this.dbname in this.openDBs) {
+          this.openDBs[this.dbname] = DB_STATE_OPEN;
+          this.DBfullpaths[this.dbname] = resultObj.fullpath;
+        }
+        this.fullpath = resultObj.fullpath;
+        if (!!success) {
+          success(this);
+        }
+        txLock = txLocks[this.dbname];
+        if (!!txLock && txLock.queue.length > 0 && !txLock.inProgress) {
+          this.startNextTransaction();
+        }
+      };
+      openerrorcb = () => {
+        console.log('OPEN database: ' + this.dbname + ' FAILED, aborting any pending transactions');
+        if (!!error) {
+          error(newSQLError('Could not open database'));
+        }
+        delete this.openDBs[this.dbname];
+        this.abortAllPendingTransactions();
+      };
+      // store initial DB state:
       this.openDBs[this.dbname] = DB_STATE_INIT;
-      step2 = (function(_this) {
-        return function() {
-          cordova.exec(opensuccesscb, openerrorcb, "SQLitePlugin", "open", [_this.openargs]);
-        };
-      })(this);
+      // UPDATED WORKAROUND SOLUTION to cordova-sqlite-storage BUG 666:
+      // Request to native side to close existing database
+      // connection in case it is already open.
+      // Wait for callback before opening the database
+      // (ignore close error).
+      step2 = () => {
+        cordova.exec(opensuccesscb, openerrorcb, "SQLitePlugin", "open", [this.openargs]);
+      };
       cordova.exec(step2, step2, 'SQLitePlugin', 'close', [
         {
           path: this.dbname
@@ -219,17 +274,30 @@
   SQLitePlugin.prototype.close = function(success, error) {
     if (this.dbname in this.openDBs) {
       if (txLocks[this.dbname] && txLocks[this.dbname].inProgress) {
+        // FUTURE TBD TODO ref BUG litehelpers/Cordova-sqlite-storage#210:
+        // Wait for current tx to finish then close,
+        // then abort any other pending transactions
+        // (and cleanup any other internal resources).
+        // (This would need testing!!)
         console.log('cannot close: transaction is in progress');
         error(newSQLError('database cannot be closed while a transaction is in progress'));
         return;
       }
       console.log('CLOSE database: ' + this.dbname);
+      // NOTE: closing one db handle disables other handles to same db
+      // FUTURE TBD TODO ref litehelpers/Cordova-sqlite-storage#210:
+      // Add a dispose method to simply invalidate the
+      // current database object ("this")
       delete this.openDBs[this.dbname];
       if (txLocks[this.dbname]) {
         console.log('closing db with transaction queue length: ' + txLocks[this.dbname].queue.length);
       } else {
         console.log('closing db with no transaction lock state');
       }
+      // XXX TODO BUG litehelpers/Cordova-sqlite-storage#210:
+      // abort all pending transactions (with error callback)
+      // when closing a database (needs testing!!)
+      // (and cleanup any other internal resources)
       cordova.exec(success, error, "SQLitePlugin", "close", [
         {
           path: this.dbname
@@ -247,6 +315,9 @@
 
   SQLitePlugin.prototype.executeSql = function(statement, params, success, error) {
     var myerror, myfn, mysuccess;
+    // XXX TODO: better to capture the result, and report it once
+    // the transaction has completely finished.
+    // This would fix BUG #204 (cannot close db in db.executeSql() callback).
     mysuccess = function(t, r) {
       if (!!success) {
         return success(r);
@@ -298,15 +369,16 @@
     this.addTransaction(new SQLitePluginTransaction(this, myfn, error, success, true, false));
   };
 
+  // ## SQLite plugin transaction object for batching:
   SQLitePluginTransaction = function(db, fn, error, success, txlock, readOnly) {
+    // FUTURE TBD check this earlier:
     if (typeof fn !== "function") {
-
       /*
       This is consistent with the implementation in Chrome -- it
       throws if you pass anything other than a function. This also
       prevents us from stalling our txQueue if somebody passes a
       false value for fn.
-       */
+      */
       throw newSQLError("transaction expected a function");
     }
     this.db = db;
@@ -321,6 +393,9 @@
         throw newSQLError("unable to begin transaction: " + err.message, err.code);
       });
     } else {
+      // Workaround for litehelpers/Cordova-sqlite-storage#409
+      // extra statement in case user function does not add any SQL statements
+      // TBD This also adds an extra statement to db.executeSql()
       this.addStatement("SELECT 1", [], null, null);
     }
   };
@@ -332,6 +407,7 @@
       this.run();
     } catch (error1) {
       err = error1;
+      // If "fn" throws, we must report the whole transaction as failed.
       txLocks[this.db.dbname].inProgress = false;
       this.db.startNextTransaction();
       if (this.error) {
@@ -357,6 +433,8 @@
     this.addStatement(sql, values, success, error);
   };
 
+  // This method adds the SQL statement to the transaction queue but does not check for
+  // finalization since it is used to execute COMMIT and ROLLBACK.
   SQLitePluginTransaction.prototype.addStatement = function(sql, values, success, error) {
     var j, len1, params, sqlStatement, t, v;
     sqlStatement = typeof sql === 'string' ? sql : sql.toString();
@@ -409,8 +487,11 @@
     txFailure = null;
     tropts = [];
     batchExecutes = this.executes;
+    // NOTE: If this is zero it will not work. Workaround is applied in the constructor.
+    // FUTURE TBD: It would be better to fix the problem here.
     waiting = batchExecutes.length;
     this.executes = [];
+    // my tx object (this)
     tx = this;
     handlerFor = function(index, didSucceed) {
       return function(response) {
@@ -424,6 +505,7 @@
             }
           } catch (error1) {
             err = error1;
+            // NOTE: txFailure is expected to be null at this point.
             txFailure = newSQLError(err);
           }
         }
@@ -432,6 +514,8 @@
             tx.executes = [];
             tx.abort(txFailure);
           } else if (tx.executes.length > 0) {
+            // new requests have been issued by the callback
+            // handlers, so run another batch.
             tx.run();
           } else {
             tx.finish();
@@ -448,7 +532,7 @@
         error: handlerFor(i, false)
       };
       tropts.push({
-        qid: null,
+        qid: null, // TBD NEEDED to pass @brodybits/Cordova-sql-test-app for some reason
         sql: request.sql,
         params: request.params
       });
@@ -456,9 +540,11 @@
     }
     mycb = function(result) {
       var j, q, r, ref, res, resultIndex, type;
-      for (resultIndex = j = 0, ref = result.length - 1; 0 <= ref ? j <= ref : j >= ref; resultIndex = 0 <= ref ? ++j : --j) {
+//console.log "mycb result #{JSON.stringify result}"
+      for (resultIndex = j = 0, ref = result.length - 1; (0 <= ref ? j <= ref : j >= ref); resultIndex = 0 <= ref ? ++j : --j) {
         r = result[resultIndex];
         type = r.type;
+        // NOTE: r.qid can be ignored
         res = r.result;
         q = mycbmap[resultIndex];
         if (q) {
@@ -537,11 +623,17 @@
   };
 
   SQLitePluginTransaction.prototype.abortFromQ = function(sqlerror) {
+    // NOTE: since the transaction is waiting in the queue,
+    // the transaction function containing the SQL statements
+    // would not be run yet. Simply report the transaction error.
     if (this.error) {
       this.error(sqlerror);
     }
   };
 
+  // ## SQLite plugin object factory:
+
+  // OLD:
   dblocations = ["docs", "libs", "nosync"];
 
   iosLocationMap = {
@@ -551,18 +643,35 @@
   };
 
   SQLiteFactory = {
-
     /*
     NOTE: this function should NOT be translated from Javascript
     back to CoffeeScript by js2coffee.
     If this function is edited in Javascript then someone will
     have to translate it back to CoffeeScript by hand.
-     */
+    */
     openDatabase: argsArray(function(args) {
       var dblocation, errorcb, okcb, openargs;
       if (args.length < 1 || !args[0]) {
         throw newSQLError('Sorry missing mandatory open arguments object in openDatabase call');
       }
+      //first = args[0]
+      //openargs = null
+      //okcb = null
+      //errorcb = null
+
+      //if first.constructor == String
+      //  openargs = {name: first}
+
+      //  if args.length >= 5
+      //    okcb = args[4]
+      //    if args.length > 5 then errorcb = args[5]
+
+      //else
+      //  openargs = first
+
+      //  if args.length >= 2
+      //    okcb = args[1]
+      //    if args.length > 2 then errorcb = args[2]
       if (args[0].constructor === String) {
         throw newSQLError('Sorry first openDatabase argument must be an object');
       }
@@ -611,8 +720,17 @@
     }),
     deleteDatabase: function(first, success, error) {
       var args, dblocation, dbname;
+      // XXX TODO BUG litehelpers/Cordova-sqlite-storage#367:
+      // abort all pending transactions (with error callback)
+      // when deleting a database
+      // (and cleanup any other internal resources)
+      // NOTE: This should properly close the database
+      // (at least on the JavaScript side) before deleting.
       args = {};
       if (first.constructor === String) {
+        //console.log "delete db name: #{first}"
+        //args.path = first
+        //args.dblocation = dblocations[0]
         throw newSQLError('Sorry first deleteDatabase argument must be an object');
       } else {
         if (!(first && first['name'])) {
@@ -635,11 +753,16 @@
         throw newSQLError('Valid iOS database location could not be determined in deleteDatabase call');
       }
       args.dblocation = dblocation;
+      // XXX TODO BUG litehelpers/Cordova-sqlite-storage#367 (repeated here):
+      // abort all pending transactions (with error callback)
+      // when deleting a database
+      // (and cleanup any other internal resources)
       delete SQLitePlugin.prototype.openDBs[args.path];
       return cordova.exec(success, error, "SQLitePlugin", "delete", [args]);
     }
   };
 
+  // ## Self test:
   SelfTest = {
     DBNAME: '___$$$___litehelpers___$$$___test___$$$___.db',
     start: function(successcb, errorcb) {
@@ -668,29 +791,32 @@
               return SelfTest.finishWithError(errorcb, 'Missing resutSet.rows.length');
             }
             if (resutSet.rows.length !== 1) {
-              return SelfTest.finishWithError(errorcb, "Incorrect resutSet.rows.length value: " + resutSet.rows.length + " (expected: 1)");
+              return SelfTest.finishWithError(errorcb, `Incorrect resutSet.rows.length value: ${resutSet.rows.length} (expected: 1)`);
             }
             if (!resutSet.rows.item(0).upperText) {
               return SelfTest.finishWithError(errorcb, 'Missing resutSet.rows.item(0).upperText');
             }
             if (resutSet.rows.item(0).upperText !== 'TEST') {
-              return SelfTest.finishWithError(errorcb, "Incorrect resutSet.rows.item(0).upperText value: " + (resutSet.rows.item(0).upperText) + " (expected: 'TEST')");
+              return SelfTest.finishWithError(errorcb, `Incorrect resutSet.rows.item(0).upperText value: ${(resutSet.rows.item(0).upperText)} (expected: 'TEST')`);
             }
             check1 = true;
           }, function(ignored, tx_sql_err) {
-            return SelfTest.finishWithError(errorcb, "TX SQL error: " + tx_sql_err);
+            return SelfTest.finishWithError(errorcb, `TX SQL error: ${tx_sql_err}`);
           });
         }, function(tx_err) {
-          return SelfTest.finishWithError(errorcb, "TRANSACTION error: " + tx_err);
+          return SelfTest.finishWithError(errorcb, `TRANSACTION error: ${tx_err}`);
         }, function() {
           if (!check1) {
             return SelfTest.finishWithError(errorcb, 'Did not get expected upperText result data');
           }
+          // SIMULATE SCENARIO IN BUG litehelpers/Cordova-sqlite-storage#666:
           db.executeSql('BEGIN', null, function(ignored) {
-            return nextTick(function() {
+            return nextTick(function() { // (nextTick needed for Windows)
+              // DELETE INTERNAL STATE to simulate the effects of location refresh or change:
               delete db.openDBs[SelfTest.DBNAME];
               delete txLocks[SelfTest.DBNAME];
               nextTick(function() {
+                // VERIFY INTERNAL STATE IS DELETED:
                 db.transaction(function(tx2) {
                   tx2.executeSql('SELECT 1');
                 }, function(tx_err) {
@@ -699,6 +825,7 @@
                   }
                   SelfTest.step2(successcb, errorcb);
                 }, function() {
+                  // NOT EXPECTED:
                   return SelfTest.finishWithError(errorcb, 'Missing error object');
                 });
               });
@@ -706,7 +833,7 @@
           });
         });
       }, function(open_err) {
-        return SelfTest.finishWithError(errorcb, "Open database error: " + open_err);
+        return SelfTest.finishWithError(errorcb, `Open database error: ${open_err}`);
       });
     },
     step2: function(successcb, errorcb) {
@@ -714,6 +841,7 @@
         name: SelfTest.DBNAME,
         location: 'default'
       }, function(db) {
+        // TX SHOULD SUCCEED to demonstrate solution to BUG litehelpers/Cordova-sqlite-storage#666:
         db.transaction(function(tx) {
           tx.executeSql('SELECT ? AS myResult', [null], function(ignored, resutSet) {
             if (!resutSet.rows) {
@@ -723,15 +851,16 @@
               return SelfTest.finishWithError(errorcb, 'Missing resutSet.rows.length');
             }
             if (resutSet.rows.length !== 1) {
-              return SelfTest.finishWithError(errorcb, "Incorrect resutSet.rows.length value: " + resutSet.rows.length + " (expected: 1)");
+              return SelfTest.finishWithError(errorcb, `Incorrect resutSet.rows.length value: ${resutSet.rows.length} (expected: 1)`);
             }
             SelfTest.step3(successcb, errorcb);
           });
         }, function(txError) {
-          return SelfTest.finishWithError(errorcb, "UNEXPECTED TRANSACTION ERROR: " + txError);
+          // NOT EXPECTED:
+          return SelfTest.finishWithError(errorcb, `UNEXPECTED TRANSACTION ERROR: ${txError}`);
         });
       }, function(open_err) {
-        return SelfTest.finishWithError(errorcb, "Open database error: " + open_err);
+        return SelfTest.finishWithError(errorcb, `Open database error: ${open_err}`);
       });
     },
     step3: function(successcb, errorcb) {
@@ -741,7 +870,7 @@
       }, function(db) {
         return db.sqlBatch(['CREATE TABLE TestTable(id integer primary key autoincrement unique, data);', ['INSERT INTO TestTable (data) VALUES (?);', ['test-value']]], function() {
           var firstid;
-          firstid = -1;
+          firstid = -1; // invalid
           return db.executeSql('SELECT id, data FROM TestTable', [], function(resutSet) {
             if (!resutSet.rows) {
               SelfTest.finishWithError(errorcb, 'Missing resutSet.rows');
@@ -752,7 +881,7 @@
               return;
             }
             if (resutSet.rows.length !== 1) {
-              SelfTest.finishWithError(errorcb, "Incorrect resutSet.rows.length value: " + resutSet.rows.length + " (expected: 1)");
+              SelfTest.finishWithError(errorcb, `Incorrect resutSet.rows.length value: ${resutSet.rows.length} (expected: 1)`);
               return;
             }
             if (resutSet.rows.item(0).id === void 0) {
@@ -765,13 +894,13 @@
               return;
             }
             if (resutSet.rows.item(0).data !== 'test-value') {
-              SelfTest.finishWithError(errorcb, "Incorrect resutSet.rows.item(0).data value: " + (resutSet.rows.item(0).data) + " (expected: 'test-value')");
+              SelfTest.finishWithError(errorcb, `Incorrect resutSet.rows.item(0).data value: ${(resutSet.rows.item(0).data)} (expected: 'test-value')`);
               return;
             }
             return db.transaction(function(tx) {
               return tx.executeSql('UPDATE TestTable SET data = ?', ['new-value']);
             }, function(tx_err) {
-              return SelfTest.finishWithError(errorcb, "UPDATE transaction error: " + tx_err);
+              return SelfTest.finishWithError(errorcb, `UPDATE transaction error: ${tx_err}`);
             }, function() {
               var readTransactionFinished;
               readTransactionFinished = false;
@@ -784,24 +913,24 @@
                     throw newSQLError('Missing resutSet2.rows.length');
                   }
                   if (resutSet2.rows.length !== 1) {
-                    throw newSQLError("Incorrect resutSet2.rows.length value: " + resutSet2.rows.length + " (expected: 1)");
+                    throw newSQLError(`Incorrect resutSet2.rows.length value: ${resutSet2.rows.length} (expected: 1)`);
                   }
                   if (!resutSet2.rows.item(0).id) {
                     throw newSQLError('Missing resutSet2.rows.item(0).id');
                   }
                   if (resutSet2.rows.item(0).id !== firstid) {
-                    throw newSQLError("resutSet2.rows.item(0).id value " + (resutSet2.rows.item(0).id) + " does not match previous primary key id value (" + firstid + ")");
+                    throw newSQLError(`resutSet2.rows.item(0).id value ${(resutSet2.rows.item(0).id)} does not match previous primary key id value (${firstid})`);
                   }
                   if (!resutSet2.rows.item(0).data) {
                     throw newSQLError('Missing resutSet2.rows.item(0).data');
                   }
                   if (resutSet2.rows.item(0).data !== 'new-value') {
-                    throw newSQLError("Incorrect resutSet2.rows.item(0).data value: " + (resutSet2.rows.item(0).data) + " (expected: 'test-value')");
+                    throw newSQLError(`Incorrect resutSet2.rows.item(0).data value: ${(resutSet2.rows.item(0).data)} (expected: 'test-value')`);
                   }
                   return readTransactionFinished = true;
                 });
               }, function(tx2_err) {
-                return SelfTest.finishWithError(errorcb, "readTransaction error: " + tx2_err);
+                return SelfTest.finishWithError(errorcb, `readTransaction error: ${tx2_err}`);
               }, function() {
                 if (!readTransactionFinished) {
                   SelfTest.finishWithError(errorcb, 'readTransaction did not finish');
@@ -811,7 +940,7 @@
                   tx3.executeSql('DELETE FROM TestTable');
                   return tx3.executeSql('INSERT INTO TestTable (data) VALUES(?)', [123]);
                 }, function(tx3_err) {
-                  return SelfTest.finishWithError(errorcb, "DELETE transaction error: " + tx3_err);
+                  return SelfTest.finishWithError(errorcb, `DELETE transaction error: ${tx3_err}`);
                 }, function() {
                   var secondReadTransactionFinished;
                   secondReadTransactionFinished = false;
@@ -824,46 +953,48 @@
                         throw newSQLError('Missing resutSet3.rows.length');
                       }
                       if (resutSet3.rows.length !== 1) {
-                        throw newSQLError("Incorrect resutSet3.rows.length value: " + resutSet3.rows.length + " (expected: 1)");
+                        throw newSQLError(`Incorrect resutSet3.rows.length value: ${resutSet3.rows.length} (expected: 1)`);
                       }
                       if (!resutSet3.rows.item(0).id) {
                         throw newSQLError('Missing resutSet3.rows.item(0).id');
                       }
                       if (resutSet3.rows.item(0).id === firstid) {
-                        throw newSQLError("resutSet3.rows.item(0).id value " + (resutSet3.rows.item(0).id) + " incorrectly matches previous unique key id value value (" + firstid + ")");
+                        throw newSQLError(`resutSet3.rows.item(0).id value ${(resutSet3.rows.item(0).id)} incorrectly matches previous unique key id value value (${firstid})`);
                       }
                       if (!resutSet3.rows.item(0).data) {
                         throw newSQLError('Missing resutSet3.rows.item(0).data');
                       }
                       if (resutSet3.rows.item(0).data !== 123) {
-                        throw newSQLError("Incorrect resutSet3.rows.item(0).data value: " + (resutSet3.rows.item(0).data) + " (expected 123)");
+                        throw newSQLError(`Incorrect resutSet3.rows.item(0).data value: ${(resutSet3.rows.item(0).data)} (expected 123)`);
                       }
                       return secondReadTransactionFinished = true;
                     });
                   }, function(tx4_err) {
-                    return SelfTest.finishWithError(errorcb, "second readTransaction error: " + tx4_err);
+                    return SelfTest.finishWithError(errorcb, `second readTransaction error: ${tx4_err}`);
                   }, function() {
                     if (!secondReadTransactionFinished) {
                       SelfTest.finishWithError(errorcb, 'second readTransaction did not finish');
                       return;
                     }
+                    // CLEANUP & FINISH:
                     db.close(function() {
                       SelfTest.cleanupAndFinish(successcb, errorcb);
                     }, function(close_err) {
-                      SelfTest.finishWithError(errorcb, "close error: " + close_err);
+                      // DO NOT IGNORE CLOSE ERROR ON ANY PLATFORM:
+                      SelfTest.finishWithError(errorcb, `close error: ${close_err}`);
                     });
                   });
                 });
               });
             });
           }, function(select_err) {
-            return SelfTest.finishWithError(errorcb, "SELECT error: " + select_err);
+            return SelfTest.finishWithError(errorcb, `SELECT error: ${select_err}`);
           });
         }, function(batch_err) {
-          return SelfTest.finishWithError(errorcb, "sql batch error: " + batch_err);
+          return SelfTest.finishWithError(errorcb, `sql batch error: ${batch_err}`);
         });
       }, function(open_err) {
-        return SelfTest.finishWithError(errorcb, "Open database error: " + open_err);
+        return SelfTest.finishWithError(errorcb, `Open database error: ${open_err}`);
       });
     },
     cleanupAndFinish: function(successcb, errorcb) {
@@ -871,23 +1002,25 @@
         name: SelfTest.DBNAME,
         location: 'default'
       }, successcb, function(cleanup_err) {
-        SelfTest.finishWithError(errorcb, "CLEANUP DELETE ERROR: " + cleanup_err);
+        // DO NOT IGNORE CLEANUP DELETE ERROR ON ANY PLATFORM:
+        SelfTest.finishWithError(errorcb, `CLEANUP DELETE ERROR: ${cleanup_err}`);
       });
     },
     finishWithError: function(errorcb, message) {
-      console.log("selfTest ERROR with message: " + message);
+      console.log(`selfTest ERROR with message: ${message}`);
       SQLiteFactory.deleteDatabase({
         name: SelfTest.DBNAME,
         location: 'default'
       }, function() {
         errorcb(newSQLError(message));
       }, function(err2) {
-        console.log("selfTest CLEANUP DELETE ERROR " + err2);
-        errorcb(newSQLError("CLEANUP DELETE ERROR: " + err2 + " for error: " + message));
+        console.log(`selfTest CLEANUP DELETE ERROR ${err2}`);
+        errorcb(newSQLError(`CLEANUP DELETE ERROR: ${err2} for error: ${message}`));
       });
     }
   };
 
+  // ## Exported API:
   root.sqlitePlugin = {
     sqliteFeatures: {
       isSQLitePlugin: true
@@ -898,7 +1031,7 @@
         if (s === 'test-string') {
           return okcb();
         } else {
-          return errorcb("Mismatch: got: '" + s + "' expected 'test-string'");
+          return errorcb(`Mismatch: got: '${s}' expected 'test-string'`);
         }
       };
       error = function(e) {
@@ -914,5 +1047,10 @@
     openDatabase: SQLiteFactory.openDatabase,
     deleteDatabase: SQLiteFactory.deleteDatabase
   };
+
+  // ## vim directives
+
+// #### vim: set filetype=coffee :
+// #### vim: set expandtab :
 
 }).call(this);
