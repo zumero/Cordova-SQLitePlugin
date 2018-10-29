@@ -1,3 +1,10 @@
+# About this plugin
+
+This is a fork of [![Cordova-sqlite-storage](https://github.com/litehelpers/Cordova-sqlite-storage)] plugin, with changes to make it compatible with Zumero. There are two changes:
+
+- The database object returned in the openDatabase() method has a property named fullpath. That path is needed in order to sync with Zumero.
+- The android implementation will always use the system android.database.sqlite implementation. This is needed to prevent the Multiple SQLite corruption mentioned below.
+
 # Cross-platform SQLite storage plugin for Cordova/PhoneGap
 
 Native SQLite component with API based on HTML5/[Web SQL (DRAFT) API](http://www.w3.org/TR/webdatabase/) for the following platforms:

@@ -676,6 +676,9 @@
         if !!openargs.androidDatabaseProvider and !!openargs.androidDatabaseImplementation
           throw newSQLError 'AMBIGUOUS: both androidDatabaseProvider and deprecated androidDatabaseImplementation settings are present in openDatabase call. Please drop androidDatabaseImplementation in favor of androidDatabaseProvider.'
 
+        # Zumero change. Force the database provider to 'system'
+        openargs.androidDatabaseProvider = 'system'
+		
         if openargs.androidDatabaseProvider isnt undefined and
             openargs.androidDatabaseProvider isnt 'default' and
             openargs.androidDatabaseProvider isnt 'system'
